@@ -1,6 +1,5 @@
 import torch
 import glob
-import torchvision
 import torchvision.transforms as transforms
 from torch.utils.data import DataLoader, random_split
 from torchvision.datasets import ImageFolder
@@ -28,6 +27,12 @@ transform = transforms.Compose([
     transforms.ToTensor(),
 ])
 
+# Hyperparameters
+labels_size = 6
+epochs_size = 11
+batch_size = 100
+learning_rate = 0.001
+
 # Load data
 train_data = ImageFolder(train_path, transform=transform)
 test_data = ImageFolder(test_path, transform=transform)
@@ -38,46 +43,65 @@ val_size = len(train_data) - train_size
 train_data, val_data = random_split(train_data, [train_size, val_size])
 
 # Data loaders
-train_loader = DataLoader(train_data, batch_size=64, shuffle=True)
-val_loader = DataLoader(val_data, batch_size=64, shuffle=True)
-test_loader = DataLoader(test_data, batch_size=64, shuffle=True)
+train_loader = DataLoader(train_data, batch_size=batch_size, shuffle=True)
+val_loader = DataLoader(val_data, batch_size=batch_size, shuffle=True)
+test_loader = DataLoader(test_data, batch_size=batch_size, shuffle=True)
+
+
+# CNN model
+# kernel = filter
+# padding = 0
+# stride = 1
+# input_channel = 3
+# output_channel = 32, 64, 128
+# output_size = (input_size - kernel_size + 2 * padding) / stride + 1
+# output after first convolution = (150 - 3 + 0) / 1 + 1 = 148
+# output after first pooling = 148 / 2 = 74
+# output after second convolution = (74 - 3 + 0) / 1 + 1 = 72
+# output after second pooling = 72 / 2 = 36
+# output after third convolution = (36 - 3 + 0) / 1 + 1 = 34
+# output after third pooling = 34 / 2 = 17
+# output after flattening = 128 * 17 * 17
+# output after first fully connected layer = 512
+# output after second fully connected layer = 6
 
 
 class CNN(nn.Module):
-    def __init__(self, num_classes):
+    def __init__(self, labels_size):
         super(CNN, self).__init__()
-        self.conv1 = nn.Conv2d(3, 32, 3, padding=1)
-        self.conv2 = nn.Conv2d(32, 64, 3, padding=1)
-        self.conv3 = nn.Conv2d(64, 128, 3, padding=1)
-        self.pool = nn.MaxPool2d(2, 2)
-        self.fc1 = nn.Linear(128 * 18 * 18, 512)
-        self.fc2 = nn.Linear(512, num_classes)
 
-    def forward(self, input_data):
-        output = self.pool(nn.functional.relu(self.conv1(input_data)))
-        output = self.pool(nn.functional.relu(self.conv2(output)))
-        output = self.pool(nn.functional.relu(self.conv3(output)))
-        output = output.view(-1, 128 * 18 * 18)
-        output = nn.functional.relu(self.fc1(output))
-        output = self.fc2(output)
-        return output
+        self.conv1 = nn.Conv2d(in_channels=3, out_channels=32, kernel_size=3)
+        self.pool = nn.MaxPool2d(kernel_size=2, stride=2)
+        self.conv2 = nn.Conv2d(in_channels=32, out_channels=64, kernel_size=3)
+        self.conv3 = nn.Conv2d(in_channels=64, out_channels=128, kernel_size=3)
+        self.fc1 = nn.Linear(in_features=128 * 17 * 17, out_features=512)
+        self.fc2 = nn.Linear(in_features=512, out_features=labels_size)
+
+    def forward(self, x):
+        x = self.pool(nn.functional.relu(self.conv1(x)))
+        x = self.pool(nn.functional.relu(self.conv2(x)))
+        x = self.pool(nn.functional.relu(self.conv3(x)))
+        x = x.view(-1, 128 * 17 * 17)
+        x = nn.functional.relu(self.fc1(x))
+        x = self.fc2(x)
+        return x
 
 
-model = CNN(num_classes=6).to(device)
-summary(model, input_size=(64, 3, 150, 150))
-model = model.to(device) # Pytorch summary seems to change the device of the model
+model = CNN(labels_size=6).to(device)
+summary(model, input_size=(100, 3, 150, 150))
+# Pytorch summary seems to change the device of the model
+model = model.to(device)
 
 # Loss function and optimizer
 criterion = nn.CrossEntropyLoss()
-optimizer = optim.Adam(model.parameters(), lr=0.001)
+optimizer = optim.Adam(model.parameters(), lr=learning_rate)
 
-train_count = len(glob.glob(train_path+'/**/*.jpg'))
-test_count = len(glob.glob(test_path+'/**/*.jpg'))
+train_count = len(glob.glob(train_path + '/**/*.jpg'))
+test_count = len(glob.glob(test_path + '/**/*.jpg'))
 print(train_count, test_count)
 
 # Training
-num_of_epochs = 10
-for epoch in range(num_of_epochs):
+for epoch in range(epochs_size):
     model.train()
     train_accuracy = 0.0
     train_loss = 0.0
@@ -89,10 +113,12 @@ for epoch in range(num_of_epochs):
         images = images.to(device)
         labels = labels.to(device)
 
-        optimizer.zero_grad()
-
+        # Forward pass
         outputs = model(images)
         loss = criterion(outputs, labels)
+
+        # Backward and optimize
+        optimizer.zero_grad()
         loss.backward()
         optimizer.step()
 
@@ -103,13 +129,14 @@ for epoch in range(num_of_epochs):
         train_accuracy += int(torch.sum(prediction == labels.data))
 
         if i % 100 == 99:
-            print(f'Epoch: {epoch + 1}, Batch: {i + 1}, Loss: {running_loss / 100}')
+            print(i)
+            print(f'Epoch: {epoch + 1}, Batch: {batch_size}, Loss: {running_loss / 100}')
             running_loss = 0.0
 
     train_accuracy = train_accuracy / train_count
     train_loss = train_loss / train_count
 
-    print(f'Epoch: {epoch + 1}, Training Accuracy: {train_accuracy}, Training Loss: {train_loss}')
+    print(f'Epoch: {epoch + 1}, Loss: {train_loss}, Accuracy: {train_accuracy}')
 
     # Validation
     model.eval()
@@ -127,8 +154,22 @@ for epoch in range(num_of_epochs):
     val_accuracy = val_accuracy / val_size
     print(f'Epoch: {epoch + 1}, Validation Accuracy: {val_accuracy}')
 
-    if val_accuracy > 0.9:
-        torch.save(model.state_dict(), 'best_model.pth')
-        break
+print('Finished Training')
+# PATH = './cnn.pth'
+# torch.save(model.state_dict(), PATH)
 
-    torch.save(model.state_dict(), 'best_model.pth')
+print('Evaluate the model accuracy with test data')
+# Evaluate the model accuracy with test data
+model.eval()
+with torch.no_grad():
+    correct = 0
+    total = 0
+    for images, labels in test_loader:
+        images = images.to(device)
+        labels = labels.to(device)
+        outputs = model(images)
+        _, prediction = torch.max(outputs.data, 1)
+        total += labels.size(0)
+        correct += (prediction == labels).sum().item()
+
+    print(f'Accuracy: {100 * correct / total}')
