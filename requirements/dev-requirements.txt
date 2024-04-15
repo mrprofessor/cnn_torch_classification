@@ -2,3 +2,4 @@ torch==2.2.2
 torchaudio==2.2.2
 torchvision==0.17.2
 torchinfo==1.8.0
+matplotlib==3.8.4

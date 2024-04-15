@@ -17,10 +17,6 @@ else:
 
 print(f"{device} device is available")
 
-# Paths
-train_path = 'input/intel-image-classification/seg_train/seg_train/'
-test_path = 'input/intel-image-classification/seg_test/seg_test/'
-
 # Transformations
 transform = transforms.Compose([
     transforms.Resize((150, 150)),
@@ -32,6 +28,10 @@ labels_size = 6
 epochs_size = 11
 batch_size = 100
 learning_rate = 0.001
+
+# Paths
+train_path = 'input/intel-image-classification/seg_train/seg_train/'
+test_path = 'input/intel-image-classification/seg_test/seg_test/'
 
 # Load data
 train_data = ImageFolder(train_path, transform=transform)
@@ -56,14 +56,46 @@ test_loader = DataLoader(test_data, batch_size=batch_size, shuffle=True)
 # output_channel = 32, 64, 128
 # output_size = (input_size - kernel_size + 2 * padding) / stride + 1
 # output after first convolution = (150 - 3 + 0) / 1 + 1 = 148
+
+# depth after first convolution = 32
+# height and width after first convolution = 148
+# filter height and width after first convolution = 3
+
 # output after first pooling = 148 / 2 = 74
+
+# depth after first pooling = 32
+# height and width after first pooling = 74
+# filter height and width after first pooling = 3
+
+
 # output after second convolution = (74 - 3 + 0) / 1 + 1 = 72
+
+# depth after second convolution = 64
+# height and width after second convolution = 72
+# filter height and width after second convolution = 3
+
+
 # output after second pooling = 72 / 2 = 36
+
+# depth after second pooling = 64
+# height and width after second pooling = 36
+# filter height and width after second pooling = 3
+
+
 # output after third convolution = (36 - 3 + 0) / 1 + 1 = 34
+
+# depth after third convolution = 128
+# height and width after third convolution = 34
+# filter height and width after third convolution = 3
+
 # output after third pooling = 34 / 2 = 17
 # output after flattening = 128 * 17 * 17
 # output after first fully connected layer = 512
 # output after second fully connected layer = 6
+
+# depth of the first layer is 3 because the input image has 3 channels (RGB)
+# filter width and height are 3
+# filter depth is 32
 
 
 class CNN(nn.Module):
@@ -100,76 +132,100 @@ train_count = len(glob.glob(train_path + '/**/*.jpg'))
 test_count = len(glob.glob(test_path + '/**/*.jpg'))
 print(train_count, test_count)
 
-# Training
+# Train and validate the model along with plotting the loss and accuracy
+# We need to plot the loss and accuracy of the training and validation data
+# over the number of epochs to see how well the model is learning
+
+# (learning curves) of the training and validation error over "time"
+# (have number of epochs on the x-axis, and both errors on the y-axis,
+
+train_loss = []
+val_loss = []
+train_accuracy = []
+val_accuracy = []
+
 for epoch in range(epochs_size):
     model.train()
-    train_accuracy = 0.0
-    train_loss = 0.0
-    running_loss = 0.0
+    train_loss_current = 0.0
+    correct_train = 0
+    total_train = 0
 
     for i, data in enumerate(train_loader, 0):
-        images, labels = data
+        inputs, labels = data
+        inputs, labels = inputs.to(device), labels.to(device)
 
-        images = images.to(device)
-        labels = labels.to(device)
-
-        # Forward pass
-        outputs = model(images)
-        loss = criterion(outputs, labels)
-
-        # Backward and optimize
         optimizer.zero_grad()
+        outputs = model(inputs)
+        loss = criterion(outputs, labels)
         loss.backward()
         optimizer.step()
 
-        running_loss += loss.item()
-        train_loss += loss.cpu().data * images.size(0)
-        _, prediction = torch.max(outputs.data, 1)
+        train_loss_current += loss.item()
 
-        train_accuracy += int(torch.sum(prediction == labels.data))
+        _, predicted = torch.max(outputs.data, 1)
+        total_train += labels.size(0)
+        correct_train += (predicted == labels).sum().item()
 
-        if i % 100 == 99:
-            print(i)
-            print(f'Epoch: {epoch + 1}, Batch: {batch_size}, Loss: {running_loss / 100}')
-            running_loss = 0.0
+    train_loss.append(train_loss_current / len(train_loader))
+    train_accuracy.append(100 * correct_train / total_train)
 
-    train_accuracy = train_accuracy / train_count
-    train_loss = train_loss / train_count
-
-    print(f'Epoch: {epoch + 1}, Loss: {train_loss}, Accuracy: {train_accuracy}')
-
-    # Validation
     model.eval()
-    val_accuracy = 0.0
-    for i, data in enumerate(val_loader):
+    val_loss_current = 0.0
+    correct_val = 0
+    total_val = 0
 
-        images, labels = data
-        images = images.to(device)
-        labels = labels.to(device)
+    with torch.no_grad():
+        for i, data in enumerate(val_loader, 0):
+            inputs, labels = data
+            inputs, labels = inputs.to(device), labels.to(device)
 
-        outputs = model(images)
-        _, prediction = torch.max(outputs.data, 1)
-        val_accuracy += int(torch.sum(prediction == labels.data))
+            outputs = model(inputs)
+            loss = criterion(outputs, labels)
 
-    val_accuracy = val_accuracy / val_size
-    print(f'Epoch: {epoch + 1}, Validation Accuracy: {val_accuracy}')
+            val_loss_current += loss.item()
 
-print('Finished Training')
-# PATH = './cnn.pth'
-# torch.save(model.state_dict(), PATH)
+            _, predicted = torch.max(outputs.data, 1)
+            total_val += labels.size(0)
+            correct_val += (predicted == labels).sum().item()
 
-print('Evaluate the model accuracy with test data')
-# Evaluate the model accuracy with test data
+    val_loss.append(val_loss_current / len(val_loader))
+    val_accuracy.append(100 * correct_val / total_val)
+
+    print(f"Epoch {epoch + 1}/{epochs_size} => "
+          f"Train Loss: {train_loss[-1]:.4f}, Train Accuracy: {train_accuracy[-1]:.2f}%, "
+          f"Validation Loss: {val_loss[-1]:.4f}, Validation Accuracy: {val_accuracy[-1]:.2f}%")
+
+# # Plotting
+# import matplotlib.pyplot as plt
+#
+# plt.figure(figsize=(10, 7))
+# plt.plot(train_loss, label='Train Loss')
+# plt.plot(val_loss, label='Validation Loss')
+# plt.xlabel('Epochs')
+# plt.ylabel('Loss')
+# plt.legend()
+# plt.show()
+
+# plt.figure(figsize=(10, 7))
+# plt.plot(train_accuracy, label='Train Accuracy')
+# plt.plot(val_accuracy, label='Validation Accuracy')
+# plt.xlabel('Epochs')
+# plt.ylabel('Accuracy')
+# plt.legend()
+# plt.show()
+
+# Finally Test the model
 model.eval()
+correct_test = 0
+total_test = 0
 with torch.no_grad():
-    correct = 0
-    total = 0
-    for images, labels in test_loader:
-        images = images.to(device)
-        labels = labels.to(device)
-        outputs = model(images)
-        _, prediction = torch.max(outputs.data, 1)
-        total += labels.size(0)
-        correct += (prediction == labels).sum().item()
+    for i, data in enumerate(test_loader, 0):
+        inputs, labels = data
+        inputs, labels = inputs.to(device), labels.to(device)
 
-    print(f'Accuracy: {100 * correct / total}')
+        outputs = model(inputs)
+        _, predicted = torch.max(outputs.data, 1)
+        total_test += labels.size(0)
+        correct_test += (predicted == labels).sum().item()
+
+print(f"Test Accuracy: {100 * correct_test / total_test:.2f}%")
